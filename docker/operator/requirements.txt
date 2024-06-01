@@ -1,0 +1,6 @@
+requests
+duckdb
+sqlalchemy
+alembic
+minio
+psycopg2-binary
