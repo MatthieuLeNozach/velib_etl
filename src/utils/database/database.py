@@ -1,5 +1,3 @@
-# database.py
-
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -15,13 +13,12 @@ cfg = Config()
 Base = declarative_base()
 logger = logging.getLogger(__name__)
 
+def create_database_connection():
+    logger.info("Creating database connection...")
+    engine = create_engine(cfg.database_uri)
+    return engine
+
 def get_db_session():
-    engine = create_database()
+    engine = create_database_connection()
     Session = sessionmaker(bind=engine)
     return Session()
-
-
-def create_tables(engine):
-    logger.info("Creating database tables...")
-    Base.metadata.create_all(engine)
-    logger.info("Database tables created successfully.")

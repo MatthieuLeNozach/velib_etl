@@ -2,6 +2,7 @@
 
 from airflow import DAG
 from airflow.providers.docker.operators.docker import DockerOperator
+from docker.types import Mount
 from datetime import datetime, timedelta
 
 default_args = {
@@ -23,7 +24,7 @@ with DAG('initialize_tables', default_args=default_args, schedule_interval=None)
         command='python -c "from utils.database.create import create_database; create_database()"',
         docker_url='unix://var/run/docker.sock',
         network_mode='bridge',
-        volumes=['./src:/app/src']
+        mounts=[Mount(source='./src', target='/app/src', type='bind')]
     )
 
     create_tables_task = DockerOperator(
@@ -34,7 +35,7 @@ with DAG('initialize_tables', default_args=default_args, schedule_interval=None)
         command='python -c "from utils.database.create import create_tables, create_database; engine = create_database(); create_tables(engine)"',
         docker_url='unix://var/run/docker.sock',
         network_mode='bridge',
-        volumes=['./src:/app/src']
+        mounts=[Mount(source='./src', target='/app/src', type='bind')]
     )
 
     create_database_task >> create_tables_task
