@@ -28,8 +28,4 @@ def populate_stations(data, *args, **kwargs):
 
 
 
-def test_output(data) -> None:
-    """
-    Template code for testing the output of the block.
-    """
-    assert data is not None, 'The output is undefined'
+

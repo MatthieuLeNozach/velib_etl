@@ -1,0 +1,4 @@
+mount/
+temp/
+.env*
+.env

@@ -8,11 +8,17 @@ def process_data(data, *args, **kwargs):
     for record in records:
         fields = record.get("fields", {})
         processed_data.append({
-            "name": fields.get("name", ""),
-            "stationcode": fields.get("stationcode", ""),
-            "latitude": fields.get("coordonnees_geo", [None, None])[0],
-            "longitude": fields.get("coordonnees_geo", [None, None])[1],
-            "nom_arrondissement_communes": fields.get("nom_arrondissement_communes", "")
+                    "record_timestamp": record.get("record_timestamp", ""),
+                    "stationcode": fields.get("stationcode", ""),
+                    "ebike": fields.get("ebike", 0),
+                    "mechanical": fields.get("mechanical", 0),
+                    "duedate": fields.get("duedate", ""),
+                    "numbikesavailable": fields.get("numbikesavailable", 0),
+                    "numdocksavailable": fields.get("numdocksavailable", 0),
+                    "capacity": fields.get("capacity", 0),
+                    "is_renting": fields.get("is_renting", ""),
+                    "is_installed": fields.get("is_installed", ""),
+                    "is_returning": fields.get("is_returning", "")
         })
     logger.info("Data processing completed. Processed %d records.", len(processed_data))
     return processed_data

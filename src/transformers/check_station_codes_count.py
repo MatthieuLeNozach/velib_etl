@@ -17,8 +17,3 @@ def check_station_codes_count(data, *args, **kwargs):
 
 
 
-def test_output(data) -> None:
-    """
-    Template code for testing the output of the block.
-    """
-    assert data is not None, 'The output is undefined'
