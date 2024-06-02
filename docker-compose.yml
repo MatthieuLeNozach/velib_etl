@@ -10,7 +10,7 @@ x-airflow-common: &airflow-common
 
     AIRFLOW__CONN_POSTGRES_URI: ${AIRFLOW__CONN_POSTGRES_URI}
     AIRFLOW_CONN_VELIB_POSTGRES: ${AIRFLOW__CONN_POSTGRES_URI}
-    
+
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-postgres/airflow
@@ -198,6 +198,32 @@ services:
       - MINIO_BUCKET=${MINIO_BUCKET}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+
+  superset:
+    image: apache/superset:latest
+    environment:
+      SUPERSET_ENV: production
+      SUPERSET_LOAD_EXAMPLES: "no"
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+#      SUPERSET_DATABASE_URL: ${AIRFLOW_CONN_VELIB_POSTGRES}
+      SUPERSET_DATABASE_URL: postgresql+psycopg2://velib_user:velib_password@user-postgres:5432/velib
+    ports:
+      - "8088:8088"
+    depends_on:
+      - user-postgres
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8088/health || exit 1"]
+      interval: 10s
+      retries: 5
+    command: >
+      /bin/bash -c "
+      superset db upgrade &&
+      superset fab create-admin --username ${SUPERSET_ADMIN_USERNAME} --password ${SUPERSET_ADMIN_PASSWORD} --firstname Admin --lastname User --email admin@superset.com &&
+      superset init &&
+      superset run -h 0.0.0.0 -p 8088
+      "
+    networks:
+      - backend
 
 volumes:
   airflow-postgres-db-volume:

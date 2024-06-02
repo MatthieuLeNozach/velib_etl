@@ -2,3 +2,5 @@ mount/
 temp/
 .env*
 .env
+
+db/

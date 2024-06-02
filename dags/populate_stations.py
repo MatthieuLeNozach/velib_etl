@@ -15,7 +15,7 @@ default_args = {
     'email_on_failure': False,
     'email_on_retry': False,
     'retries': 1,
-    'retry_delay': timedelta(minutes=5),
+    'retry_delay': timedelta(minutes=1),
 }
 
 pg_hook = PostgresHook(postgres_conn_id='velib_postgres')
@@ -68,18 +68,13 @@ def check_timestamp_exists(**kwargs):
     result = pg_hook.get_first("SELECT 1 FROM stations WHERE record_timestamp = %s LIMIT 1", parameters=(latest_timestamp,))
 
     if result:
-        logger.info("Timestamp %s already exists in the database. Skipping data insertion.", latest_timestamp)
-        return False
+        logger.error("Timestamp %s already exists in the database. Failing the task.", latest_timestamp)
+        raise ValueError(f"Timestamp {latest_timestamp} already exists in the database.")
     else:
         logger.info("Timestamp %s does not exist in the database. Proceeding with data insertion.", latest_timestamp)
-        return True
 
 def populate_stations_op(**kwargs):
     ti = kwargs['ti']
-    if not kwargs['ti'].xcom_pull(task_ids='check_timestamp_exists'):
-        logger.info("Skipping data insertion as the timestamp already exists.")
-        return
-
     processed_data = ti.xcom_pull(key='processed_data', task_ids='process_station_data')
     insert_query = """
     INSERT INTO stations (record_timestamp, stationcode, ebike, mechanical, duedate, numbikesavailable, numdocksavailable, capacity, is_renting, is_installed, is_returning)
@@ -87,7 +82,6 @@ def populate_stations_op(**kwargs):
     """
     for record in processed_data:
         pg_hook.run(insert_query, parameters=record)
-
 
 with DAG(
     'populate_stations', 
@@ -124,7 +118,5 @@ with DAG(
         python_callable=populate_stations_op,
         provide_context=True,
     )
-
-
 
     check_postgres_task >> fetch_data_task >> process_station_data_task >> check_timestamp_exists_task >> populate_stations_task
