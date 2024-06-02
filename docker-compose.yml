@@ -2,9 +2,11 @@ version: "3"
 x-airflow-common: &airflow-common
   image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.8.1}
   environment: &airflow-common-env
+    VELIB_POSTGRES_HOST: ${POSTGRES_HOST}
     VELIB_POSTGRES_USER: ${POSTGRES_USER}
     VELIB_POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     VELIB_POSTGRES_DB: ${POSTGRES_DB}
+    VELIB_POSTGRES_PORT: ${POSTGRES_PORT}
 
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -60,12 +62,12 @@ services:
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}  # Corrected this line
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./db:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "velib_user", "-d", "velib"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
       interval: 5s
       retries: 5
     restart: always

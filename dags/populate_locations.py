@@ -4,29 +4,9 @@ import logging
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.hooks.postgres_hook import PostgresHook
-from airflow.models import Connection
-from airflow.utils.dates import days_ago
-from airflow import settings
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
-
-# Create a new connection object using environment variables
-conn = Connection(
-    conn_id="velib_postgres_connection",
-    conn_type="postgres",
-    host=os.getenv("VELIB_POSTGRES_HOST"),
-    schema=os.getenv("VELIB_POSTGRES_DB"),
-    login=os.getenv("VELIB_POSTGRES_USER"),
-    password=os.getenv("VELIB_POSTGRES_PASSWORD"),
-    port=int(os.getenv("VELIB_POSTGRES_PORT") or "0"),
-)
-
-# Add the connection to Airflow's session
-session = settings.Session()
-if not session.query(Connection).filter(Connection.conn_id == 'velib_postgres_connection').first():
-    session.add(conn)
-    session.commit()
 
 default_args = {
     'owner': 'airflow',
@@ -39,7 +19,20 @@ default_args = {
 }
 
 def check_postgres_connection(**kwargs):
-    pg_hook = PostgresHook(postgres_conn_id='velib_postgres_connection')
+    # Log environment variables
+    logger.info("VELIB_POSTGRES_HOST: %s", os.getenv("VELIB_POSTGRES_HOST"))
+    logger.info("VELIB_POSTGRES_DB: %s", os.getenv("VELIB_POSTGRES_DB"))
+    logger.info("VELIB_POSTGRES_USER: %s", os.getenv("VELIB_POSTGRES_USER"))
+    logger.info("VELIB_POSTGRES_PASSWORD: %s", os.getenv("VELIB_POSTGRES_PASSWORD"))
+    logger.info("VELIB_POSTGRES_PORT: %s", os.getenv("VELIB_POSTGRES_PORT"))
+
+    pg_hook = PostgresHook(
+        schema=os.getenv("VELIB_POSTGRES_DB"),
+        host=os.getenv("VELIB_POSTGRES_HOST"),
+        port=int(os.getenv("VELIB_POSTGRES_PORT")),
+        login=os.getenv("VELIB_POSTGRES_USER"),
+        password=os.getenv("VELIB_POSTGRES_PASSWORD"),
+    )
     pg_hook.get_conn()
     logger.info("PostgreSQL connection check passed.")
 
@@ -76,7 +69,13 @@ def process_data_op(**kwargs):
 def insert_data_to_postgres(**kwargs):
     ti = kwargs['ti']
     processed_data = ti.xcom_pull(key='processed_data', task_ids='process_data')
-    pg_hook = PostgresHook(postgres_conn_id='velib_postgres_connection')
+    pg_hook = PostgresHook(
+        schema=os.getenv("VELIB_POSTGRES_DB"),
+        host=os.getenv("VELIB_POSTGRES_HOST"),
+        port=int(os.getenv("VELIB_POSTGRES_PORT")),
+        login=os.getenv("VELIB_POSTGRES_USER"),
+        password=os.getenv("VELIB_POSTGRES_PASSWORD"),
+    )
     insert_query = """
     INSERT INTO locations (stationcode, name, latitude, longitude, nom_arrondissement_communes)
     VALUES (%(stationcode)s, %(name)s, %(latitude)s, %(longitude)s, %(nom_arrondissement_communes)s)
@@ -86,14 +85,20 @@ def insert_data_to_postgres(**kwargs):
         pg_hook.run(insert_query, parameters=record)
 
 def check_row_count(**kwargs):
-    pg_hook = PostgresHook(postgres_conn_id='velib_postgres_connection')
+    pg_hook = PostgresHook(
+        schema=os.getenv("VELIB_POSTGRES_DB"),
+        host=os.getenv("VELIB_POSTGRES_HOST"),
+        port=int(os.getenv("VELIB_POSTGRES_PORT")),
+        login=os.getenv("VELIB_POSTGRES_USER"),
+        password=os.getenv("VELIB_POSTGRES_PASSWORD"),
+    )
     row_count = pg_hook.get_first("SELECT COUNT(*) FROM locations")[0]
     if row_count >= 1460:
         logger.info("Row count check passed. Total rows: %d", row_count)
     else:
         raise ValueError(f"Row count check failed. Expected at least 1460 rows, but found {row_count} rows.")
 
-with DAG('populate_locations', default_args=default_args, schedule_interval=timedelta(days=1)) as dag:
+with DAG('populate_locations', default_args=default_args, schedule_interval=None, catchup=False) as dag:
     check_postgres_task = PythonOperator(
         task_id='check_postgres_connection',
         python_callable=check_postgres_connection,
