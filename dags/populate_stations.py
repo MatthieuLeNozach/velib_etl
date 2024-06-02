@@ -4,29 +4,9 @@ import logging
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.hooks.postgres_hook import PostgresHook
-from airflow.models import Connection
-from airflow.utils.dates import days_ago
-from airflow import settings
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
-
-# Create a new connection object using environment variables
-conn = Connection(
-    conn_id="velib_postgres_connection",
-    conn_type="postgres",
-    host=os.getenv("VELIB_POSTGRES_HOST"),
-    schema=os.getenv("VELIB_POSTGRES_DB"),
-    login=os.getenv("VELIB_POSTGRES_USER"),
-    password=os.getenv("VELIB_POSTGRES_PASSWORD"),
-    port=int(os.getenv("VELIB_POSTGRES_PORT") or "0"),
-)
-
-# Add the connection to Airflow's session
-session = settings.Session()
-if not session.query(Connection).filter(Connection.conn_id == 'velib_postgres_connection').first():
-    session.add(conn)
-    session.commit()
 
 default_args = {
     'owner': 'airflow',
@@ -37,6 +17,12 @@ default_args = {
     'retries': 1,
     'retry_delay': timedelta(minutes=5),
 }
+
+pg_hook = PostgresHook(postgres_conn_id='velib_postgres')
+
+def check_postgres_connection(**kwargs):
+    pg_hook.get_conn()
+    logger.info("PostgreSQL connection check passed.")
 
 def fetch_data_from_api(**kwargs):
     logger.info("Fetching data from API...")
@@ -69,59 +55,52 @@ def process_data_op(**kwargs):
             "capacity": fields.get("capacity", 0),
             "is_renting": fields.get("is_renting", ""),
             "is_installed": fields.get("is_installed", ""),
-            "is_returning": fields.get("is_returning", ""),
-            "name": fields.get("name", ""),
-            "latitude": fields.get("coordonnees_geo", [])[0] if fields.get("coordonnees_geo") else None,
-            "longitude": fields.get("coordonnees_geo", [])[1] if fields.get("coordonnees_geo") else None,
-            "nom_arrondissement_communes": fields.get("nom_arrondissement_communes", "")
+            "is_returning": fields.get("is_returning", "")
         })
     logger.info("Data processing completed. Processed %d records.", len(processed_data))
     ti.xcom_push(key='processed_data', value=processed_data)
 
-def populate_stations_op(**kwargs):
-    ti = kwargs['ti']
-    processed_data = ti.xcom_pull(key='processed_data', task_ids='process_station_data')
-    pg_hook = PostgresHook(postgres_conn_id='velib_postgres_connection')
-    insert_query = """
-    INSERT INTO stations (record_timestamp, stationcode, ebike, mechanical, duedate, numbikesavailable, numdocksavailable, capacity, is_renting, is_installed, is_returning, name, latitude, longitude, nom_arrondissement_communes)
-    VALUES (%(record_timestamp)s, %(stationcode)s, %(ebike)s, %(mechanical)s, %(duedate)s, %(numbikesavailable)s, %(numdocksavailable)s, %(capacity)s, %(is_renting)s, %(is_installed)s, %(is_returning)s, %(name)s, %(latitude)s, %(longitude)s, %(nom_arrondissement_communes)s)
-    ON CONFLICT (record_timestamp) DO UPDATE
-    SET stationcode = EXCLUDED.stationcode,
-        ebike = EXCLUDED.ebike,
-        mechanical = EXCLUDED.mechanical,
-        duedate = EXCLUDED.duedate,
-        numbikesavailable = EXCLUDED.numbikesavailable,
-        numdocksavailable = EXCLUDED.numdocksavailable,
-        capacity = EXCLUDED.capacity,
-        is_renting = EXCLUDED.is_renting,
-        is_installed = EXCLUDED.is_installed,
-        is_returning = EXCLUDED.is_returning,
-        name = EXCLUDED.name,
-        latitude = EXCLUDED.latitude,
-        longitude = EXCLUDED.longitude,
-        nom_arrondissement_communes = EXCLUDED.nom_arrondissement_communes;
-    """
-    for record in processed_data:
-        pg_hook.run(insert_query, parameters=record)
-
-def check_data_added(**kwargs):
+def check_timestamp_exists(**kwargs):
     ti = kwargs['ti']
     raw_data = ti.xcom_pull(key='api_data', task_ids='fetch_data')
     latest_timestamp = raw_data["records"][0]["record_timestamp"]
 
-    pg_hook = PostgresHook(postgres_conn_id='velib_postgres_connection')
-    last_row = pg_hook.get_first("SELECT record_timestamp FROM stations ORDER BY record_timestamp DESC LIMIT 1")
+    result = pg_hook.get_first("SELECT 1 FROM stations WHERE record_timestamp = %s LIMIT 1", parameters=(latest_timestamp,))
 
-    if last_row and last_row[0] == latest_timestamp:
-        logger.info("Data has been successfully added to the database. Latest timestamp: %s", latest_timestamp)
+    if result:
+        logger.info("Timestamp %s already exists in the database. Skipping data insertion.", latest_timestamp)
+        return False
     else:
-        raise ValueError("Timestamp mismatch: fetched timestamp does not match the last inserted row timestamp.")
+        logger.info("Timestamp %s does not exist in the database. Proceeding with data insertion.", latest_timestamp)
+        return True
+
+def populate_stations_op(**kwargs):
+    ti = kwargs['ti']
+    if not kwargs['ti'].xcom_pull(task_ids='check_timestamp_exists'):
+        logger.info("Skipping data insertion as the timestamp already exists.")
+        return
+
+    processed_data = ti.xcom_pull(key='processed_data', task_ids='process_station_data')
+    insert_query = """
+    INSERT INTO stations (record_timestamp, stationcode, ebike, mechanical, duedate, numbikesavailable, numdocksavailable, capacity, is_renting, is_installed, is_returning)
+    VALUES (%(record_timestamp)s, %(stationcode)s, %(ebike)s, %(mechanical)s, %(duedate)s, %(numbikesavailable)s, %(numdocksavailable)s, %(capacity)s, %(is_renting)s, %(is_installed)s, %(is_returning)s)
+    """
+    for record in processed_data:
+        pg_hook.run(insert_query, parameters=record)
+
 
 with DAG(
     'populate_stations', 
     default_args=default_args, 
-    schedule_interval=timedelta(seconds=120)
+    schedule_interval=timedelta(seconds=120),
+    catchup=False
 ) as dag:
+    check_postgres_task = PythonOperator(
+        task_id='check_postgres_connection',
+        python_callable=check_postgres_connection,
+        provide_context=True,
+    )
+
     fetch_data_task = PythonOperator(
         task_id='fetch_data',
         python_callable=fetch_data_from_api,
@@ -134,16 +113,18 @@ with DAG(
         provide_context=True,
     )
 
+    check_timestamp_exists_task = PythonOperator(
+        task_id='check_timestamp_exists',
+        python_callable=check_timestamp_exists,
+        provide_context=True,
+    )
+
     populate_stations_task = PythonOperator(
         task_id='populate_stations',
         python_callable=populate_stations_op,
         provide_context=True,
     )
 
-    check_data_added_task = PythonOperator(
-        task_id='check_data_added',
-        python_callable=check_data_added,
-        provide_context=True,
-    )
 
-    fetch_data_task >> process_station_data_task >> populate_stations_task >> check_data_added_task
+
+    check_postgres_task >> fetch_data_task >> process_station_data_task >> check_timestamp_exists_task >> populate_stations_task

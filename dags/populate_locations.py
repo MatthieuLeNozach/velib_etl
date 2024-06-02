@@ -18,21 +18,10 @@ default_args = {
     'retry_delay': timedelta(minutes=5),
 }
 
-def check_postgres_connection(**kwargs):
-    # Log environment variables
-    logger.info("VELIB_POSTGRES_HOST: %s", os.getenv("VELIB_POSTGRES_HOST"))
-    logger.info("VELIB_POSTGRES_DB: %s", os.getenv("VELIB_POSTGRES_DB"))
-    logger.info("VELIB_POSTGRES_USER: %s", os.getenv("VELIB_POSTGRES_USER"))
-    logger.info("VELIB_POSTGRES_PASSWORD: %s", os.getenv("VELIB_POSTGRES_PASSWORD"))
-    logger.info("VELIB_POSTGRES_PORT: %s", os.getenv("VELIB_POSTGRES_PORT"))
+# Using the connection ID defined in environment variables
+pg_hook = PostgresHook(postgres_conn_id='velib_postgres')
 
-    pg_hook = PostgresHook(
-        schema=os.getenv("VELIB_POSTGRES_DB"),
-        host=os.getenv("VELIB_POSTGRES_HOST"),
-        port=int(os.getenv("VELIB_POSTGRES_PORT")),
-        login=os.getenv("VELIB_POSTGRES_USER"),
-        password=os.getenv("VELIB_POSTGRES_PASSWORD"),
-    )
+def check_postgres_connection(**kwargs):
     pg_hook.get_conn()
     logger.info("PostgreSQL connection check passed.")
 
@@ -69,13 +58,7 @@ def process_data_op(**kwargs):
 def insert_data_to_postgres(**kwargs):
     ti = kwargs['ti']
     processed_data = ti.xcom_pull(key='processed_data', task_ids='process_data')
-    pg_hook = PostgresHook(
-        schema=os.getenv("VELIB_POSTGRES_DB"),
-        host=os.getenv("VELIB_POSTGRES_HOST"),
-        port=int(os.getenv("VELIB_POSTGRES_PORT")),
-        login=os.getenv("VELIB_POSTGRES_USER"),
-        password=os.getenv("VELIB_POSTGRES_PASSWORD"),
-    )
+    
     insert_query = """
     INSERT INTO locations (stationcode, name, latitude, longitude, nom_arrondissement_communes)
     VALUES (%(stationcode)s, %(name)s, %(latitude)s, %(longitude)s, %(nom_arrondissement_communes)s)
@@ -85,13 +68,6 @@ def insert_data_to_postgres(**kwargs):
         pg_hook.run(insert_query, parameters=record)
 
 def check_row_count(**kwargs):
-    pg_hook = PostgresHook(
-        schema=os.getenv("VELIB_POSTGRES_DB"),
-        host=os.getenv("VELIB_POSTGRES_HOST"),
-        port=int(os.getenv("VELIB_POSTGRES_PORT")),
-        login=os.getenv("VELIB_POSTGRES_USER"),
-        password=os.getenv("VELIB_POSTGRES_PASSWORD"),
-    )
     row_count = pg_hook.get_first("SELECT COUNT(*) FROM locations")[0]
     if row_count >= 1460:
         logger.info("Row count check passed. Total rows: %d", row_count)
