@@ -10,6 +10,8 @@ x-airflow-common: &airflow-common
 
     AIRFLOW__CONN_POSTGRES_URI: ${AIRFLOW__CONN_POSTGRES_URI}
     AIRFLOW_CONN_VELIB_POSTGRES: ${AIRFLOW__CONN_POSTGRES_URI}
+    AIRFLOW_CONN_VELIB_S3: ${AIRFLOW_CONN_VELIB_S3}
+
 
     AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
@@ -25,7 +27,7 @@ x-airflow-common: &airflow-common
     AIRFLOW__SMTP__SMTP_USER: "de.airflow@gmail.com"
     AIRFLOW__SMTP__SMTP_PASSWORD: "cfsrvkongsobheta"
     AIRFLOW__SMTP__SMTP_MAIL_FROM: "de.airflow@gmail.com"
-    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- pymongo minio boto3 sqlalchemy}
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:- pymongo minio boto3 sqlalchemy apache-airflow-providers-amazon}
     PYTHONPATH: /opt/airflow/
     # MinIO environment variables
     MINIO_ENDPOINT: minioserver:9000
